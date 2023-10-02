@@ -5,7 +5,9 @@ import torch
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 import argparse
 from pytorch_lightning import Trainer
-from pytorch_lightning.plugins import DDPPlugin
+# from pytorch_lightning.plugins import DDPPlugin
+from pytorch_lightning.strategies import DDPStrategy
+
 import os
 
 input_size = 8 + 3
@@ -94,14 +96,21 @@ if __name__ == "__main__":
 
     dDMTS = dDMTSDataModule(dt_ann=dt_ann)
 
+#     trainer = Trainer(
+#         max_epochs=args.epochs,
+#         progress_bar_refresh_rate=20,
+#         callbacks=[checkpoint_callback, early_stop_callback],
+#         accelerator="ddp",
+#         log_every_n_steps=10,
+#         plugins=DDPPlugin(find_unused_parameters=False),
+#         gpus=[1, 2]
+#     )
     trainer = Trainer(
         max_epochs=args.epochs,
-        progress_bar_refresh_rate=20,
         callbacks=[checkpoint_callback, early_stop_callback],
-        accelerator="ddp",
+        accelerator="auto",
         log_every_n_steps=10,
-        plugins=DDPPlugin(find_unused_parameters=False),
-        gpus=[1, 2]
+        strategy="ddp",  # replace plugins argument with strategy argument
     )
 
     trainer.fit(model, dDMTS)
