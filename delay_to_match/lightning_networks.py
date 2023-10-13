@@ -3,7 +3,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 import pytorch_lightning as pl
-
+import matplotlib.pyplot as plt
+from sklearn.linear_model import LogisticRegression  # Import the classifier
 
 class dDMTSNet(pl.LightningModule):
     """distractedDelayedMatchToSampleNetwork. Class defines RNN for solving a
@@ -30,6 +31,7 @@ class dDMTSNet(pl.LightningModule):
         self.save_hyperparameters()
         self.act_reg = 0
         self.param_reg = 0
+        self.accumulated_accuracies = None
 
         if rnn_type == "vRNN":
             # if model is vanilla RNN
@@ -58,6 +60,7 @@ class dDMTSNet(pl.LightningModule):
         return out_readout, out_hidden, w_hidden, _
 
     def training_step(self, batch, batch_idx):
+        # print('training.')
         # training_step defined the train loop.
         # It is independent of forward
 
@@ -82,6 +85,7 @@ class dDMTSNet(pl.LightningModule):
         return loss
 
     def validation_step(self, batch, batch_idx):
+        # print('validation')
         # defines validation step
         inp, out_des, y, test_on, dis_bool = batch
         out_readout, _, _, _ = self.rnn(inp)
@@ -107,8 +111,66 @@ class dDMTSNet(pl.LightningModule):
         self.log("val_acc", accs.mean(), prog_bar=True)
 
     def test_step(self, batch, batch_idx):
+        # print('testing')
         # Here we just reuse the validation_step for testing
-        return self.validation_step(batch, batch_idx)
+        # return self.validation_step(batch, batch_idx)
+        
+        inp, out_des, y, test_on, dis_bool = batch
+        out_readout, out_hidden, _, _ = self.rnn(inp)
+
+        unique_test_on_values = torch.unique(test_on)
+        for test_on_value in unique_test_on_values:
+            mask = test_on == test_on_value
+            inp_sub, out_des_sub, y_sub, test_on_sub, dis_bool_sub = [tensor[mask] for tensor in batch]
+            before_match_hidden = out_hidden[torch.arange(out_hidden.shape[0]).to(out_hidden.device)[mask], (test_on_sub - 1).long(), :]
+
+            clf = LogisticRegression()
+            clf.fit(before_match_hidden.cpu().numpy(), y_sub.cpu().numpy())
+            unique_value = int(test_on_sub[0].item())
+            after_match_hidden = out_hidden[mask, unique_value:, :]
+            
+            accuracies = []  # List to store accuracies at each time step after the match
+            
+            for t in range(after_match_hidden.shape[1]):
+                current_time_step_hidden = after_match_hidden[:, t, :]
+                predictions = clf.predict(current_time_step_hidden.cpu().numpy())
+                accuracy = (predictions == y_sub.cpu().numpy()).sum()/len(predictions)
+                accuracies.append(accuracy)
+                
+            int_test_on_value = int(test_on_value.item())  # Convert to int once to reuse   
+            if self.accumulated_accuracies is None:
+                self.accumulated_accuracies = {int_test_on_value: np.array(accuracies)}
+            else:
+                if int_test_on_value not in self.accumulated_accuracies:
+                    # If the key doesn't exist, create a new entry for it
+                    self.accumulated_accuracies[int_test_on_value] = np.array(accuracies)
+                else:
+                    # If the key does exist, stack the new accuracies along a new dimension
+                    self.accumulated_accuracies[int_test_on_value] = np.vstack((
+                        self.accumulated_accuracies[int_test_on_value], 
+                        np.array(accuracies)
+                    ))
+        accs = np.zeros(out_readout.shape[0])
+        # test model performance
+        for i in range(out_readout.shape[0]):
+            curr_max = (
+                out_readout[
+                    i,
+                    int(test_on[i])
+                    + int(500 / self.dt_ann): int(test_on[i])
+                    + 2 * int(500 / self.dt_ann),
+                    :-1,
+                ]
+                .argmax(dim=1)
+                .cpu()
+                .detach()
+                .numpy()
+            )
+            accs[i] = (y[i].item() == curr_max).sum() / len(curr_max)
+
+        self.log("test_acc", accs.mean(), prog_bar=True)
+        
+            
 
     def configure_optimizers(self):
         # by default, we use an L2 weight decay on all parameters.
@@ -118,6 +180,28 @@ class dDMTSNet(pl.LightningModule):
         # lr_scheduler = {'scheduler':  torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.1),"monitor": 'val_acc'}
         return [optimizer]  # ,[lr_scheduler]
 
+    def on_test_epoch_end(self):
+        # Calculate mean accuracy across all batches for each time step
+        # mean_accuracies = self.accumulated_accuracies.mean(axis=0)
+        for test_on_value, accuracies in self.accumulated_accuracies.items():
+            Y_mean = accuracies.mean(axis=0)
+            Y_sem = accuracies.std(axis=0) / np.sqrt(accuracies.shape[0])
+
+        # Now visualize mean_accuracies, which has shape (num_time_steps,)
+        # e.g., using matplotlib:
+            plt.figure()
+            x = np.arange(len(Y_mean))  # Assuming x-axis is the index of time steps post-match
+            plt.plot(x, Y_mean, label='Mean Accuracy')
+            plt.fill_between(x, Y_mean - Y_sem, Y_mean + Y_sem, alpha=0.5, label='SEM')
+            plt.xlabel('Time steps post-match')
+            plt.ylabel('Accuracy')
+            plt.title(f'Test On: {test_on_value}')
+            # plt.legend()  # Optional: add a legend
+            plt.savefig(f'convergence_{test_on_value}.pdf')
+            plt.show()
+
+        # Reset accumulated_accuracies for the next testing epoch
+        self.accumulated_accuracies = None
 
 class vRNNLayer(pl.LightningModule):
     """Vanilla RNN layer in continuous time."""

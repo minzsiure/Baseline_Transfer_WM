@@ -2,7 +2,7 @@ from lightning_networks import dDMTSNet
 from lightning_task import dDMTSDataModule
 import pytorch_lightning as pl
 import torch
-from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
+from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping, TQDMProgressBar
 import argparse
 from pytorch_lightning import Trainer
 # from pytorch_lightning.plugins import DDPPlugin
@@ -47,6 +47,7 @@ if __name__ == "__main__":
                         help="parameter regularization strength")
     parser.add_argument("--epochs", type=int, default=10,
                         help="number of epochs to train (default: 10)")
+    parser.add_argument("--testing", action="store_true", help="Skip to testing if set")
 
     args = parser.parse_args()
 
@@ -75,18 +76,36 @@ if __name__ == "__main__":
         monitor="val_acc", stopping_threshold=0.95, mode="max", patience=50
     )
 
-    model = dDMTSNet(
-        args.rnn_type,
-        input_size,
-        args.hs,
-        output_size,
-        dt_ann,
-        alpha,
-        alpha_W,
-        g,
-        args.nl,
-        args.lr,
-    )
+    # If the --testing flag is set, load the model from a checkpoint
+    if args.testing:
+        model = dDMTSNet(
+            args.rnn_type,
+            input_size,
+            args.hs,
+            output_size,
+            dt_ann,
+            alpha,
+            alpha_W,
+            g,
+            args.nl,
+            args.lr,
+        )
+        model = dDMTSNet.load_from_checkpoint("example.ckpt")
+        print('model loaded from checkpoint')
+    else:
+        model = dDMTSNet(
+            args.rnn_type,
+            input_size,
+            args.hs,
+            output_size,
+            dt_ann,
+            alpha,
+            alpha_W,
+            g,
+            args.nl,
+            args.lr,
+        )
+        print('model initiated')
 
     model.act_reg = args.act_reg
     model.param_reg = args.param_reg
@@ -95,24 +114,21 @@ if __name__ == "__main__":
         model.rnn.gamma_val = args.gamma
 
     dDMTS = dDMTSDataModule(dt_ann=dt_ann)
+    print('data initiated')
 
-#     trainer = Trainer(
-#         max_epochs=args.epochs,
-#         progress_bar_refresh_rate=20,
-#         callbacks=[checkpoint_callback, early_stop_callback],
-#         accelerator="ddp",
-#         log_every_n_steps=10,
-#         plugins=DDPPlugin(find_unused_parameters=False),
-#         gpus=[1, 2]
-#     )
+    tqdm_progress_bar = TQDMProgressBar()
     trainer = Trainer(
+        devices=1,
         max_epochs=args.epochs,
-        callbacks=[checkpoint_callback, early_stop_callback],
-        accelerator="auto",
+        callbacks=[checkpoint_callback, early_stop_callback, tqdm_progress_bar],
+        accelerator="gpu",
         log_every_n_steps=10,
-        strategy="ddp",  # replace plugins argument with strategy argument
     )
 
-    trainer.fit(model, dDMTS)
-
-    # trainer.save_checkpoint("example.ckpt")
+    if not args.testing:
+        trainer.fit(model, dDMTS)
+        trainer.save_checkpoint("example.ckpt")
+    
+    trainer.test(model=model, datamodule=dDMTS)
+    
+    
