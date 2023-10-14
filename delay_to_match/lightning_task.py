@@ -13,7 +13,7 @@ NUM_WORKERS = int(os.cpu_count() / 2)
 class DMTS_Dataset(torch.utils.data.Dataset):
     'Characterizes a delay-match to sample task'
 
-    def __init__(self, inps, out_des, list_IDs, labels, test_ons, distracted_bools):
+    def __init__(self, inps, out_des, list_IDs, labels, test_ons, distracted_bools, samp_offs):
         'Initialization'
         self.labels = labels
         self.list_IDs = list_IDs
@@ -21,6 +21,8 @@ class DMTS_Dataset(torch.utils.data.Dataset):
         self.out_des = out_des
         self.test_ons = test_ons
         self.distracted_bools = distracted_bools
+        self.samp_offs = samp_offs
+        # self.test_offs = test_offs
 
     def __len__(self):
         'Denotes the total number of samples'
@@ -37,8 +39,10 @@ class DMTS_Dataset(torch.utils.data.Dataset):
         out = self.out_des[ID]
         test_on = self.test_ons[ID]
         distracted_bool = self.distracted_bools[ID]
+        samp_off = self.samp_offs[ID]
+        # test_off = self.test_offs[ID]
 
-        return inp, out, y, test_on, distracted_bool
+        return inp, out, y, test_on, distracted_bool, samp_off
 
 
 def generate_one_DMTS_IO(sample_mat, samp, noise_level, dt, alpha, time_limits=[-1, 5.5], possible_delays=[1., 1.41, 2., 2.83, 4.], use_distractor=1):
@@ -65,6 +69,7 @@ def generate_one_DMTS_IO(sample_mat, samp, noise_level, dt, alpha, time_limits=[
 
     test_on = samp_off + int(delay_length)
     test_off = test_on + 500
+    # print(f'test_on {int(test_on/dt)}, sample_off: {int(samp_off/dt)}, test_off: {int(test_off/dt)}')
 
     # present sample
     inp[samp_on:samp_off, :-1] = sample_mat[samp]
@@ -89,7 +94,8 @@ def generate_one_DMTS_IO(sample_mat, samp, noise_level, dt, alpha, time_limits=[
 
     inp += np.sqrt(2/alpha)*noise_level*torch.randn(inp.shape)
 
-    return inp[::dt], out_des[::dt], int(test_on/dt), distracted_bool
+    # adding also int(samp_off/dt)
+    return inp[::dt], out_des[::dt], int(test_on/dt), distracted_bool, int(samp_off/dt)
 
 
 def generate_DMTS(dt=100, tau=100, time_limits=[-1, 5.5], num_samples=8+2, variable_delay=True, mid_delay_distractor=True):
@@ -129,13 +135,15 @@ def generate_DMTS(dt=100, tau=100, time_limits=[-1, 5.5], num_samples=8+2, varia
         (num_examples, TIME_STEPS, num_samples+1), requires_grad=False)
     test_ons = torch.empty((num_examples), requires_grad=False)
     distracted_bools = torch.empty((num_examples), requires_grad=False)
+    samp_offs = torch.empty((num_examples), requires_grad=False)
+    # test_offs = torch.empty((num_examples), requires_grad=False)
 
     labels = torch.empty(num_examples)
     list_IDs = []
 
     for i in range(num_examples):
         samp = np.random.choice(np.arange(num_samples-2))
-        inps[i], out_des[i], test_ons[i], distracted_bools[i] = generate_one_DMTS_IO(
+        inps[i], out_des[i], test_ons[i], distracted_bools[i], samp_offs[i] = generate_one_DMTS_IO(
             sample_mat=sample_mat, samp=samp, noise_level=noise_level, dt=dt, alpha=dt/tau, time_limits=time_limits)
         labels[i] = samp
         list_IDs.append(i)
@@ -143,22 +151,22 @@ def generate_DMTS(dt=100, tau=100, time_limits=[-1, 5.5], num_samples=8+2, varia
     partition = {'train': list_IDs[:num_train], 'test': list_IDs[num_train: num_train +
                                                                  num_test], 'val': list_IDs[num_train + num_test: num_train + num_test + num_val]}
 
-    return inps, out_des, partition, labels, test_ons, distracted_bools
+    return inps, out_des, partition, labels, test_ons, distracted_bools, samp_offs
 
 
 def get_DMTS_training_test_val_sets(dt_ann, train_batch=256, test_batch=256, val_batch=2**12):
 
-    inps, out_des, partition, labels, test_ons, distracted_bools = generate_DMTS(
+    inps, out_des, partition, labels, test_ons, distracted_bools, samp_offs = generate_DMTS(
         dt=dt_ann)
 
     training_set = DMTS_Dataset(
-        inps, out_des, partition['train'], labels, test_ons, distracted_bools)
+        inps, out_des, partition['train'], labels, test_ons, distracted_bools, samp_offs)
 
     test_set = DMTS_Dataset(
-        inps, out_des, partition['test'], labels, test_ons, distracted_bools)
+        inps, out_des, partition['test'], labels, test_ons, distracted_bools, samp_offs)
 
     validation_set = DMTS_Dataset(
-        inps, out_des, partition['val'], labels, test_ons, distracted_bools)
+        inps, out_des, partition['val'], labels, test_ons, distracted_bools, samp_offs)
 
     return training_set, test_set, validation_set
 
@@ -177,7 +185,7 @@ class dDMTSDataModule(pl.LightningDataModule):
         return DataLoader(self.training_data, batch_size=BATCH_SIZE, shuffle=True, num_workers=NUM_WORKERS, drop_last=True, pin_memory=False)
 
     def val_dataloader(self):
-        return DataLoader(self.test_data, batch_size=2**11, num_workers=NUM_WORKERS, drop_last=True, pin_memory=False)
+        return DataLoader(self.test_data, batch_size=32, num_workers=NUM_WORKERS, drop_last=True, pin_memory=False)
 
     def test_dataloader(self):
         return DataLoader(self.validation_data, batch_size=1024, num_workers=NUM_WORKERS, drop_last=True, pin_memory=False)

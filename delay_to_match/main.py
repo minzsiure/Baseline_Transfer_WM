@@ -21,10 +21,10 @@ g = 0.9
 AVAIL_GPUS = max(1, torch.cuda.device_count())
 
 BATCH_SIZE = 256 if AVAIL_GPUS else 32
-#BATCH_SIZE = 64
+# BATCH_SIZE = 1
 
 if __name__ == "__main__":
-
+    torch.cuda.empty_cache()
     print('The number of availible GPUS is: ' + str(AVAIL_GPUS))
 
     parser = argparse.ArgumentParser(description="rnn dDMTS")
@@ -48,6 +48,7 @@ if __name__ == "__main__":
     parser.add_argument("--epochs", type=int, default=10,
                         help="number of epochs to train (default: 10)")
     parser.add_argument("--testing", action="store_true", help="Skip to testing if set")
+    parser.add_argument("--include_delay", action="store_true", help="Whether to plot delay")
 
     args = parser.parse_args()
 
@@ -89,6 +90,7 @@ if __name__ == "__main__":
             g,
             args.nl,
             args.lr,
+            args.include_delay
         )
         model = dDMTSNet.load_from_checkpoint("example.ckpt")
         print('model loaded from checkpoint')
@@ -104,6 +106,7 @@ if __name__ == "__main__":
             g,
             args.nl,
             args.lr,
+            args.include_delay
         )
         print('model initiated')
 
@@ -118,11 +121,10 @@ if __name__ == "__main__":
 
     tqdm_progress_bar = TQDMProgressBar()
     trainer = Trainer(
-        devices=1,
+        devices=[1],
         max_epochs=args.epochs,
         callbacks=[checkpoint_callback, early_stop_callback, tqdm_progress_bar],
         accelerator="gpu",
-        log_every_n_steps=10,
     )
 
     if not args.testing:
