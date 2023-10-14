@@ -69,7 +69,7 @@ def generate_one_DMTS_IO(sample_mat, samp, noise_level, dt, alpha, time_limits=[
 
     test_on = samp_off + int(delay_length)
     test_off = test_on + 500
-    # print(f'test_on {int(test_on/dt)}, sample_off: {int(samp_off/dt)}, test_off: {int(test_off/dt)}')
+    # print(f'test_on {int(test_on/dt)}, dis_on: {int(dis_on/dt)}, dis_off: {int(dis_off/dt)}')
 
     # present sample
     inp[samp_on:samp_off, :-1] = sample_mat[samp]
@@ -185,7 +185,7 @@ class dDMTSDataModule(pl.LightningDataModule):
         return DataLoader(self.training_data, batch_size=BATCH_SIZE, shuffle=True, num_workers=NUM_WORKERS, drop_last=True, pin_memory=False)
 
     def val_dataloader(self):
-        return DataLoader(self.test_data, batch_size=32, num_workers=NUM_WORKERS, drop_last=True, pin_memory=False)
+        return DataLoader(self.test_data, batch_size=2*11, num_workers=NUM_WORKERS, drop_last=True, pin_memory=False)
 
     def test_dataloader(self):
         return DataLoader(self.validation_data, batch_size=1024, num_workers=NUM_WORKERS, drop_last=True, pin_memory=False)

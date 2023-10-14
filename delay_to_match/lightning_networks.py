@@ -38,6 +38,8 @@ class dDMTSNet(pl.LightningModule):
         self.include_delay = include_delay
         self.mark_delay_end_dict = {233:133, 194:94, 166:66, 366:266, 288:188}
         self.mark_test_end_dict = {233:166, 194:127, 366:300, 288:222, 166:100}
+        self.mark_dis_on_dict = {233:66, 194:47, 366:133, 288:94, 166:33}
+        self.mark_dis_off_dict = {233:83, 194:63, 366:150, 288:111, 166:50}
 
         if rnn_type == "vRNN":
             # if model is vanilla RNN
@@ -228,10 +230,16 @@ class dDMTSNet(pl.LightningModule):
             
             mark_delay_end = self.mark_delay_end_dict.get(test_on_value, None)
             mark_test_end = self.mark_test_end_dict.get(test_on_value, None)
+            mark_dis_on = self.mark_dis_on_dict.get(test_on_value, None)
+            mark_dis_off = self.mark_dis_off_dict.get(test_on_value, None)
+            
+            plt.axvline(x=0, color='gray', linestyle='--', label='Delay Start')
+            plt.axvline(x=mark_dis_on, color='khaki', linestyle='-', label='Distractor Start')
+            plt.axvline(x=mark_dis_off, color='khaki', linestyle='--', label='Distractor End')
             if mark_delay_end is not None:
-                plt.axvline(x=mark_delay_end, color='gray', linestyle='--', label='Delay End')
+                plt.axvline(x=mark_delay_end, color='gray', linestyle='-', label='Delay End/Test Start')
             if mark_test_end is not None:
-                plt.axvline(x=mark_test_end, color='gray', linestyle='--', label='Test End')
+                plt.axvline(x=mark_test_end, color='lightsteelblue', linestyle='--', label='Test End')
 
             # If there's data for no distractor, plot it
             if acc_no_distractor is not None:
