@@ -40,6 +40,7 @@ class dDMTSNet(pl.LightningModule):
         self.mark_test_end_dict = {233:166, 194:127, 366:300, 288:222, 166:100}
         self.mark_dis_on_dict = {233:66, 194:47, 366:133, 288:94, 166:33}
         self.mark_dis_off_dict = {233:83, 194:63, 366:150, 288:111, 166:50}
+        self.rnn_type = rnn_type
 
         if rnn_type == "vRNN":
             # if model is vanilla RNN
@@ -61,6 +62,7 @@ class dDMTSNet(pl.LightningModule):
             )
             self.fixed_syn = False
             self.stsp = True
+        
 
     def forward(self, x):
         # defines foward method using the chosen RNN type
@@ -260,7 +262,7 @@ class dDMTSNet(pl.LightningModule):
             plt.ylabel('Accuracy')
             plt.title(f'Test On: {test_on_value}')
             plt.legend()
-            plt.savefig(f'convergence_{test_on_value}_sampleoff_teston_diffcases_includeDelay.pdf')
+            plt.savefig(f'results/{self.rnn_type}/convergence_{test_on_value}_sampleoff_teston_diffcases_includeDelay.pdf')
             plt.show()
 
         # Reset accumulated accuracies for the next testing epoch
