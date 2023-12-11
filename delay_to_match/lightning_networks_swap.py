@@ -62,7 +62,15 @@ class dDMTSNet(pl.LightningModule):
             )
             self.fixed_syn = False
             self.stsp = True
-        
+            
+    def set_hemisphere(self, hemisphere):
+        """
+        Set the active hemisphere for training.
+        'left' for left hemisphere, 'right' for right hemisphere, 'both' for both hemispheres.
+        """
+        assert hemisphere in ['left', 'right', 'both'], "Invalid hemisphere option"
+        self.rnn.hemisphere = hemisphere
+        print(f'Reset rnn hemisphere to {hemisphere}')
 
     def forward(self, x):
         # defines foward method using the chosen RNN type
@@ -722,6 +730,12 @@ class stspRNNLayer(pl.LightningModule):
                 input.shape[0], input.shape[1], self.hidden_size, device=self.device
             )
         )
+        
+        """masking for swap"""
+        # if self.hemisphere == 'left':
+        mask_for_weight_ih = self.mask['weight_ih'][self.hemisphere]
+        mask_for_weight_ho = self.mask['weight_ho'][self.hemisphere]
+        mask_for_W = self.mask['W'][self.hemisphere]
 
         # for storing neural outputs, hidden states, and synaptic states
         outputs = []
@@ -732,7 +746,7 @@ class stspRNNLayer(pl.LightningModule):
         for i in range(input.shape[1]):
 
             # compute and save neural output
-            hy = state @ self.weight_ho.T + self.bias_oh
+            hy = state @ (mask_for_weight_ho*self.weight_ho).T + self.bias_oh
             outputs += [hy]
 
             # save neural and synaptic hidden states
@@ -750,13 +764,13 @@ class stspRNNLayer(pl.LightningModule):
 
             # define modulated presynaptic input based on STSP rule
             I = (x_state * state * u_state) @ (
-                (self.D @ F.relu(self.W)) * self.struc_perturb_mask
+                (self.D @ F.relu(mask_for_W*self.W)) * self.struc_perturb_mask
             )
 
             # compute neural update
             fstate = -state + self.phi(
                 I
-                + input[:, i, :] @ self.weight_ih.T
+                + input[:, i, :] @ (mask_for_weight_ih*self.weight_ih).T
                 + self.bias_hh
                 + self.inv_sqrt_alpha * noise[:, i, :]
             )
@@ -785,3 +799,4 @@ class stspRNNLayer(pl.LightningModule):
         """
         assert hemisphere in ['left', 'right', 'both'], "Invalid hemisphere option"
         self.hemisphere = hemisphere
+        print(f'Reset rnn hemisphere to {hemisphere}')
