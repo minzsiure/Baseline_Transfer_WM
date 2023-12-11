@@ -1,4 +1,5 @@
-from lightning_networks import dDMTSNet
+# from lightning_networks import dDMTSNet
+from lightning_networks_swap import dDMTSNet
 from lightning_task import dDMTSDataModule
 import pytorch_lightning as pl
 import torch
@@ -6,7 +7,7 @@ from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping, TQDMProg
 import argparse
 from pytorch_lightning import Trainer
 # from pytorch_lightning.plugins import DDPPlugin
-from pytorch_lightning.strategies import DDPStrategy
+# from pytorch_lightning.strategies import DDPStrategy
 
 import os
 
@@ -47,8 +48,12 @@ if __name__ == "__main__":
                         help="parameter regularization strength")
     parser.add_argument("--epochs", type=int, default=10,
                         help="number of epochs to train (default: 10)")
+    
     parser.add_argument("--testing", action="store_true", help="Skip to testing if set")
+    parser.add_argument("--plot", action="store_true", help="whether to plot or not")
     parser.add_argument("--include_delay", action="store_true", help="Whether to plot delay")
+    parser.add_argument("--hemisphere", type=str, default=None,
+                        help="left, right, or both hemisphere to be activated at initialization")
 
     args = parser.parse_args()
 
@@ -71,12 +76,13 @@ if __name__ == "__main__":
     '''
 
     checkpoint_callback.CHECKPOINT_NAME_LAST = (
-        f"rnn={args.rnn_type}--nl={args.nl}--hs={args.hs}--act_reg={args.act_reg}--gamma={args.gamma}--param_reg={args.param_reg}--" + "{epoch:02d}--{val_acc:.2f}")
+        f"new-rnn={args.rnn_type}--nl={args.nl}--hs={args.hs}--act_reg={args.act_reg}--gamma={args.gamma}--param_reg={args.param_reg}--" + "{epoch:02d}--{val_acc:.2f}")
 
     early_stop_callback = EarlyStopping(
         monitor="val_acc", stopping_threshold=0.95, mode="max", patience=50
     )
-
+    torch.set_float32_matmul_precision('medium') 
+    
     # If the --testing flag is set, load the model from a checkpoint
     if args.testing:
         model = dDMTSNet(
@@ -90,7 +96,9 @@ if __name__ == "__main__":
             g,
             args.nl,
             args.lr,
-            args.include_delay
+            args.include_delay,
+            args.plot,
+            args.hemisphere,
         )
         model = dDMTSNet.load_from_checkpoint("example.ckpt")
         print('model loaded from checkpoint')
@@ -106,7 +114,9 @@ if __name__ == "__main__":
             g,
             args.nl,
             args.lr,
-            args.include_delay
+            args.include_delay,
+            args.plot,
+            args.hemisphere,
         )
         print('model initiated')
 
@@ -121,15 +131,17 @@ if __name__ == "__main__":
 
     tqdm_progress_bar = TQDMProgressBar()
     trainer = Trainer(
-        devices=[1],
         max_epochs=args.epochs,
-        callbacks=[checkpoint_callback, early_stop_callback, tqdm_progress_bar],
+        callbacks=[checkpoint_callback, early_stop_callback],
         accelerator="gpu",
+        enable_progress_bar=True,
+        enable_model_summary=True
     )
 
     if not args.testing:
         trainer.fit(model, dDMTS)
-        trainer.save_checkpoint("example.ckpt")
+        trainer.save_checkpoint("both_hemisphere_stsp.ckpt")
+        print('training done.')
     
     trainer.test(model=model, datamodule=dDMTS)
     

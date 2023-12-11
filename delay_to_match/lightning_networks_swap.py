@@ -23,7 +23,9 @@ class dDMTSNet(pl.LightningModule):
         g,
         nl,
         lr,
-        include_delay
+        include_delay,
+        plot=False,
+        hemisphere=None,
     ):
         super().__init__()
         self.stsp = False
@@ -41,6 +43,7 @@ class dDMTSNet(pl.LightningModule):
         self.mark_dis_on_dict = {233:66, 194:47, 366:133, 288:94, 166:33}
         self.mark_dis_off_dict = {233:83, 194:63, 366:150, 288:111, 166:50}
         self.rnn_type = rnn_type
+        self.plot = plot
 
         if rnn_type == "vRNN":
             # if model is vanilla RNN
@@ -58,7 +61,7 @@ class dDMTSNet(pl.LightningModule):
         if rnn_type == "stsp":
             # if model is Mongillo/Masse STSP
             self.rnn = stspRNNLayer(
-                input_size, hidden_size, output_size, alpha, dt_ann, g, nl
+                input_size, hidden_size, output_size, alpha, dt_ann, g, nl, hemisphere
             )
             self.fixed_syn = False
             self.stsp = True
@@ -137,57 +140,58 @@ class dDMTSNet(pl.LightningModule):
         inp, out_des, y, test_on, dis_bool, samp_off = batch
         out_readout, out_hidden, _, _ = self.rnn(inp)
 
-        unique_test_on_values = torch.unique(test_on)
-        for test_on_value in unique_test_on_values:
-            mask = test_on == test_on_value
-            inp_sub, out_des_sub, y_sub, test_on_sub, dis_bool_sub, samp_off_sub = [tensor[mask] for tensor in batch]
-            before_match_hidden = out_hidden[torch.arange(out_hidden.shape[0]).to(out_hidden.device)[mask], (samp_off_sub - 1).long(), :]
+        if self.plot:
+            unique_test_on_values = torch.unique(test_on)
+            for test_on_value in unique_test_on_values:
+                mask = test_on == test_on_value
+                inp_sub, out_des_sub, y_sub, test_on_sub, dis_bool_sub, samp_off_sub = [tensor[mask] for tensor in batch]
+                before_match_hidden = out_hidden[torch.arange(out_hidden.shape[0]).to(out_hidden.device)[mask], (samp_off_sub - 1).long(), :]
 
-            clf_all = LogisticRegression()
-            clf_no_distractor = LogisticRegression()
-            clf_distractor = LogisticRegression()
+                clf_all = LogisticRegression()
+                clf_no_distractor = LogisticRegression()
+                clf_distractor = LogisticRegression()
+                
+                # Separate data based on distractor presence
+                no_distractor_mask = dis_bool_sub == 0
+                distractor_mask = dis_bool_sub == 1
             
-            # Separate data based on distractor presence
-            no_distractor_mask = dis_bool_sub == 0
-            distractor_mask = dis_bool_sub == 1
-        
-            clf_all.fit(before_match_hidden.cpu().numpy(), y_sub.cpu().numpy())
-            if no_distractor_mask.any():
-                clf_no_distractor.fit(before_match_hidden[no_distractor_mask].cpu().numpy(), y_sub[no_distractor_mask].cpu().numpy())
-            if distractor_mask.any():
-                clf_distractor.fit(before_match_hidden[distractor_mask].cpu().numpy(), y_sub[distractor_mask].cpu().numpy())
+                clf_all.fit(before_match_hidden.cpu().numpy(), y_sub.cpu().numpy())
+                if no_distractor_mask.any():
+                    clf_no_distractor.fit(before_match_hidden[no_distractor_mask].cpu().numpy(), y_sub[no_distractor_mask].cpu().numpy())
+                if distractor_mask.any():
+                    clf_distractor.fit(before_match_hidden[distractor_mask].cpu().numpy(), y_sub[distractor_mask].cpu().numpy())
 
-            if self.include_delay: # start from delay start, which is samp_off_sub to afer
-                unique_value = int(torch.unique(samp_off_sub).item())
+                if self.include_delay: # start from delay start, which is samp_off_sub to afer
+                    unique_value = int(torch.unique(samp_off_sub).item())
 
-            else: # start from test_on
-                unique_value = int(test_on_sub[0].item())
+                else: # start from test_on
+                    unique_value = int(test_on_sub[0].item())
 
-            
-            after_match_hidden = out_hidden[mask, unique_value:, :]
-            int_test_on_value = int(test_on_value.item())  # Convert to int once to reuse   
-            
+                
+                after_match_hidden = out_hidden[mask, unique_value:, :]
+                int_test_on_value = int(test_on_value.item())  # Convert to int once to reuse   
+                
 
-            # Separate storage for accuracies
-            for clf, acc_dict, label, mask in zip([clf_all, clf_no_distractor, clf_distractor], 
-                                            [self.accumulated_accuracies, 
-                                            self.accumulated_accuracies_no_distractor, 
-                                            self.accumulated_accuracies_distractor], 
-                                            ['all', 'no_distractor', 'distractor'],
-                                            [slice(None), no_distractor_mask, distractor_mask]):
-                accuracies = []  # List to store accuracies at each time step after the match
-                for t in range(after_match_hidden.shape[1]):
-                    current_time_step_hidden = after_match_hidden[mask, t, :]
-                    y_sub_masked = y_sub[mask]
-                    predictions = clf.predict(current_time_step_hidden.cpu().numpy())
-                    accuracy = (predictions == y_sub_masked.cpu().numpy()).sum()/len(predictions)
-                    accuracies.append(accuracy)
+                # Separate storage for accuracies
+                for clf, acc_dict, label, mask in zip([clf_all, clf_no_distractor, clf_distractor], 
+                                                [self.accumulated_accuracies, 
+                                                self.accumulated_accuracies_no_distractor, 
+                                                self.accumulated_accuracies_distractor], 
+                                                ['all', 'no_distractor', 'distractor'],
+                                                [slice(None), no_distractor_mask, distractor_mask]):
+                    accuracies = []  # List to store accuracies at each time step after the match
+                    for t in range(after_match_hidden.shape[1]):
+                        current_time_step_hidden = after_match_hidden[mask, t, :]
+                        y_sub_masked = y_sub[mask]
+                        predictions = clf.predict(current_time_step_hidden.cpu().numpy())
+                        accuracy = (predictions == y_sub_masked.cpu().numpy()).sum()/len(predictions)
+                        accuracies.append(accuracy)
 
-                # Store accuracies
-                if int_test_on_value not in acc_dict:
-                    acc_dict[int_test_on_value] = np.array(accuracies)
-                else:
-                    acc_dict[int_test_on_value] = np.vstack((acc_dict[int_test_on_value], np.array(accuracies)))
+                    # Store accuracies
+                    if int_test_on_value not in acc_dict:
+                        acc_dict[int_test_on_value] = np.array(accuracies)
+                    else:
+                        acc_dict[int_test_on_value] = np.vstack((acc_dict[int_test_on_value], np.array(accuracies)))
 
         accs = np.zeros(out_readout.shape[0])
         # test model performance
@@ -220,63 +224,64 @@ class dDMTSNet(pl.LightningModule):
         return [optimizer]  # ,[lr_scheduler]
 
     def on_test_epoch_end(self):
-        for test_on_value in self.accumulated_accuracies.keys():
-            # Get the data for this test_on value
-            acc_all = self.accumulated_accuracies[test_on_value]
-            acc_no_distractor = self.accumulated_accuracies_no_distractor.get(test_on_value, None)
-            acc_distractor = self.accumulated_accuracies_distractor.get(test_on_value, None)
+        if self.plot:
+            for test_on_value in self.accumulated_accuracies.keys():
+                # Get the data for this test_on value
+                acc_all = self.accumulated_accuracies[test_on_value]
+                acc_no_distractor = self.accumulated_accuracies_no_distractor.get(test_on_value, None)
+                acc_distractor = self.accumulated_accuracies_distractor.get(test_on_value, None)
 
-            # Calculate mean and SEM
-            Y_mean_all = acc_all.mean(axis=0)
-            Y_sem_all = acc_all.std(axis=0) / np.sqrt(acc_all.shape[0])
+                # Calculate mean and SEM
+                Y_mean_all = acc_all.mean(axis=0)
+                Y_sem_all = acc_all.std(axis=0) / np.sqrt(acc_all.shape[0])
 
-            # Create a new figure for each test_on value
-            plt.figure()
-            x = np.arange(len(Y_mean_all))  # Assuming x-axis is the index of time steps post-match
+                # Create a new figure for each test_on value
+                plt.figure()
+                x = np.arange(len(Y_mean_all))  # Assuming x-axis is the index of time steps post-match
 
-            # Plot data for all cases
-            plt.plot(x, Y_mean_all, label='All Data')
-            plt.fill_between(x, Y_mean_all - Y_sem_all, Y_mean_all + Y_sem_all, alpha=0.5)
-            
-            mark_delay_end = self.mark_delay_end_dict.get(test_on_value, None)
-            mark_test_end = self.mark_test_end_dict.get(test_on_value, None)
-            mark_dis_on = self.mark_dis_on_dict.get(test_on_value, None)
-            mark_dis_off = self.mark_dis_off_dict.get(test_on_value, None)
-            
-            plt.axvline(x=0, color='gray', linestyle='--', label='Delay Start')
-            plt.axvline(x=mark_dis_on, color='khaki', linestyle='-', label='Distractor Start')
-            plt.axvline(x=mark_dis_off, color='khaki', linestyle='--', label='Distractor End')
-            if mark_delay_end is not None:
-                plt.axvline(x=mark_delay_end, color='gray', linestyle='-', label='Delay End/Test Start')
-            if mark_test_end is not None:
-                plt.axvline(x=mark_test_end, color='lightsteelblue', linestyle='--', label='Test End')
+                # Plot data for all cases
+                plt.plot(x, Y_mean_all, label='All Data')
+                plt.fill_between(x, Y_mean_all - Y_sem_all, Y_mean_all + Y_sem_all, alpha=0.5)
+                
+                mark_delay_end = self.mark_delay_end_dict.get(test_on_value, None)
+                mark_test_end = self.mark_test_end_dict.get(test_on_value, None)
+                mark_dis_on = self.mark_dis_on_dict.get(test_on_value, None)
+                mark_dis_off = self.mark_dis_off_dict.get(test_on_value, None)
+                
+                plt.axvline(x=0, color='gray', linestyle='--', label='Delay Start')
+                plt.axvline(x=mark_dis_on, color='khaki', linestyle='-', label='Distractor Start')
+                plt.axvline(x=mark_dis_off, color='khaki', linestyle='--', label='Distractor End')
+                if mark_delay_end is not None:
+                    plt.axvline(x=mark_delay_end, color='gray', linestyle='-', label='Delay End/Test Start')
+                if mark_test_end is not None:
+                    plt.axvline(x=mark_test_end, color='lightsteelblue', linestyle='--', label='Test End')
 
-            # If there's data for no distractor, plot it
-            if acc_no_distractor is not None:
-                Y_mean_no_distractor = acc_no_distractor.mean(axis=0)
-                Y_sem_no_distractor = acc_no_distractor.std(axis=0) / np.sqrt(acc_no_distractor.shape[0])
-                plt.plot(x, Y_mean_no_distractor, label='Without Distractor')
-                plt.fill_between(x, Y_mean_no_distractor - Y_sem_no_distractor, Y_mean_no_distractor + Y_sem_no_distractor, alpha=0.5)
+                # If there's data for no distractor, plot it
+                if acc_no_distractor is not None:
+                    Y_mean_no_distractor = acc_no_distractor.mean(axis=0)
+                    Y_sem_no_distractor = acc_no_distractor.std(axis=0) / np.sqrt(acc_no_distractor.shape[0])
+                    plt.plot(x, Y_mean_no_distractor, label='Without Distractor')
+                    plt.fill_between(x, Y_mean_no_distractor - Y_sem_no_distractor, Y_mean_no_distractor + Y_sem_no_distractor, alpha=0.5)
 
-            # If there's data for distractor, plot it
-            if acc_distractor is not None:
-                Y_mean_distractor = acc_distractor.mean(axis=0)
-                Y_sem_distractor = acc_distractor.std(axis=0) / np.sqrt(acc_distractor.shape[0])
-                plt.plot(x, Y_mean_distractor, label='With Distractor')
-                plt.fill_between(x, Y_mean_distractor - Y_sem_distractor, Y_mean_distractor + Y_sem_distractor, alpha=0.5)
+                # If there's data for distractor, plot it
+                if acc_distractor is not None:
+                    Y_mean_distractor = acc_distractor.mean(axis=0)
+                    Y_sem_distractor = acc_distractor.std(axis=0) / np.sqrt(acc_distractor.shape[0])
+                    plt.plot(x, Y_mean_distractor, label='With Distractor')
+                    plt.fill_between(x, Y_mean_distractor - Y_sem_distractor, Y_mean_distractor + Y_sem_distractor, alpha=0.5)
 
-            # Customize and save the plot
-            plt.xlabel('Time steps post-delay')
-            plt.ylabel('Accuracy')
-            plt.title(f'Test On: {test_on_value}')
-            plt.legend()
-            plt.savefig(f'results/{self.rnn_type}/convergence_{test_on_value}_sampleoff_teston_diffcases_includeDelay.pdf')
-            plt.show()
+                # Customize and save the plot
+                plt.xlabel('Time steps post-delay')
+                plt.ylabel('Accuracy')
+                plt.title(f'Test On: {test_on_value}')
+                plt.legend()
+                plt.savefig(f'results/{self.rnn_type}/convergence_{test_on_value}_sampleoff_teston_diffcases_includeDelay.pdf')
+                plt.show()
 
-        # Reset accumulated accuracies for the next testing epoch
-        self.accumulated_accuracies = {}
-        self.accumulated_accuracies_no_distractor = {}
-        self.accumulated_accuracies_distractor = {}
+            # Reset accumulated accuracies for the next testing epoch
+            self.accumulated_accuracies = {}
+            self.accumulated_accuracies_no_distractor = {}
+            self.accumulated_accuracies_distractor = {}
 
 class vRNNLayer(pl.LightningModule):
     """Vanilla RNN layer in continuous time."""
@@ -713,7 +718,6 @@ class stspRNNLayer(pl.LightningModule):
         self.hemisphere = hemisphere  # can be 'left', 'right', or 'both'
 
     def forward(self, input):
-
         # initialize neural state and synaptic states
         state = 0 * \
             torch.randn(input.shape[0], self.hidden_size, device=self.device)
@@ -733,9 +737,9 @@ class stspRNNLayer(pl.LightningModule):
         
         """masking for swap"""
         # if self.hemisphere == 'left':
-        mask_for_weight_ih = self.mask['weight_ih'][self.hemisphere]
-        mask_for_weight_ho = self.mask['weight_ho'][self.hemisphere]
-        mask_for_W = self.mask['W'][self.hemisphere]
+        mask_for_weight_ih = self.mask['weight_ih'][self.hemisphere].to(self.weight_ih.device)
+        mask_for_weight_ho = self.mask['weight_ho'][self.hemisphere].to(self.weight_ho.device)
+        mask_for_W = self.mask['W'][self.hemisphere].to(self.W.device)
 
         # for storing neural outputs, hidden states, and synaptic states
         outputs = []
