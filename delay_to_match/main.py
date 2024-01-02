@@ -127,6 +127,8 @@ if __name__ == "__main__":
         model.rnn.gamma_val = args.gamma
 
     dDMTS = dDMTSDataModule(dt_ann=dt_ann)
+    print(len(dDMTS.val_dataloader))
+    breakpoint()
     print('data initiated')
 
     tqdm_progress_bar = TQDMProgressBar()

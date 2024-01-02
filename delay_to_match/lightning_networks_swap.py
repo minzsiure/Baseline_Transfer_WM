@@ -26,6 +26,7 @@ class dDMTSNet(pl.LightningModule):
         include_delay,
         plot=False,
         hemisphere=None,
+        mode='no-swap'
     ):
         super().__init__()
         self.stsp = False
@@ -44,11 +45,13 @@ class dDMTSNet(pl.LightningModule):
         self.mark_dis_off_dict = {233:83, 194:63, 366:150, 288:111, 166:50}
         self.rnn_type = rnn_type
         self.plot = plot
+        
 
         if rnn_type == "vRNN":
             # if model is vanilla RNN
             self.rnn = vRNNLayer(input_size, hidden_size,
-                                 output_size, alpha, g, nl)
+                                 output_size, alpha, g, nl,
+                                 hemisphere, mode)
             self.fixed_syn = True
 
         if rnn_type == "ah":
@@ -61,21 +64,16 @@ class dDMTSNet(pl.LightningModule):
         if rnn_type == "stsp":
             # if model is Mongillo/Masse STSP
             self.rnn = stspRNNLayer(
-                input_size, hidden_size, output_size, alpha, dt_ann, g, nl, hemisphere
+                input_size, hidden_size, output_size, alpha, dt_ann, g, nl, 
+                hemisphere
             )
             self.fixed_syn = False
             self.stsp = True
             
-    def set_hemisphere(self, hemisphere):
-        """
-        Set the active hemisphere for training.
-        'left' for left hemisphere, 'right' for right hemisphere, 'both' for both hemispheres.
-        """
-        assert hemisphere in ['left', 'right', 'both'], "Invalid hemisphere option"
-        self.rnn.hemisphere = hemisphere
-        print(f'Reset rnn hemisphere to {hemisphere}')
 
     def forward(self, x):
+        print('im called watch out')
+        breakpoint()
         # defines foward method using the chosen RNN type
         out_readout, out_hidden, w_hidden, _ = self.rnn(x)
         return out_readout, out_hidden, w_hidden, _
@@ -85,9 +83,9 @@ class dDMTSNet(pl.LightningModule):
         # training_step defined the train loop.
         # It is independent of forward
 
-        inp, out_des, y, test_on, dis_bool, samp_off = batch
+        inp, out_des, y, test_on, dis_bool, samp_off, dis_on = batch
         # print(samp_off)
-        out_readout, out_hidden, _, _ = self.rnn(inp)
+        out_readout, out_hidden, _, _ = self.rnn(inp, test_on, dis_on)
 
         # accumulate losses. if penalizing activity, then add it to the loss
         if self.act_reg != 0:
@@ -193,6 +191,7 @@ class dDMTSNet(pl.LightningModule):
                     else:
                         acc_dict[int_test_on_value] = np.vstack((acc_dict[int_test_on_value], np.array(accuracies)))
 
+        """compute accuracy"""
         accs = np.zeros(out_readout.shape[0])
         # test model performance
         for i in range(out_readout.shape[0]):
@@ -286,7 +285,8 @@ class dDMTSNet(pl.LightningModule):
 class vRNNLayer(pl.LightningModule):
     """Vanilla RNN layer in continuous time."""
 
-    def __init__(self, input_size, hidden_size, output_size, alpha, g, nonlinearity):
+    def __init__(self, input_size, hidden_size, output_size, alpha, g, nonlinearity,
+                 hemisphere, mode):
         super(vRNNLayer, self).__init__()
 
         self.input_size = input_size
@@ -298,6 +298,7 @@ class vRNNLayer(pl.LightningModule):
         self.disc_stab = True
         self.g = g
         self.process_noise = 0.05
+        self.mode = mode
 
         # set nonlinearity of the vRNN
         self.nonlinearity = nonlinearity
@@ -344,8 +345,39 @@ class vRNNLayer(pl.LightningModule):
             torch.FloatTensor(self.hidden_size, self.hidden_size).uniform_()
             > self.struc_p_0,
         )
+        
+        left_mask_for_weight_ih, right_mask_for_weight_ih = torch.zeros_like(self.weight_ih), torch.zeros_like(self.weight_ih)
+        left_mask_for_weight_ho, right_mask_for_weight_ho = torch.zeros_like(self.weight_ho), torch.zeros_like(self.weight_ho)
+        left_mask_for_W, right_mask_for_W = torch.zeros_like(self.W), torch.zeros_like(self.W)
+        
+        left_mask_for_weight_ih[hidden_size//2:, :] = 1 # everything on left is 1, used for left hemisphere activation
+        right_mask_for_weight_ih[:hidden_size//2, :] = 1
+        
+        left_mask_for_weight_ho[:, hidden_size//2:] = 1 
+        right_mask_for_weight_ho[:, :hidden_size//2] = 1
+        
+        left_mask_for_W[hidden_size//2:, :] = 1
+        right_mask_for_W[:hidden_size//2, :] = 1
+        
+        self.mask = {'weight_ih':{'left':left_mask_for_weight_ih, 'right':right_mask_for_weight_ih, 'both':torch.ones_like(self.weight_ih)},
+                     'weight_ho':{'left':left_mask_for_weight_ho, 'right':right_mask_for_weight_ho, 'both':torch.ones_like(self.weight_ho)},
+                     'W':{'left':left_mask_for_W, 'right':right_mask_for_W, 'both':torch.ones_like(self.W)}}
 
-    def forward(self, input):
+        if hemisphere == None:
+            self.hemisphere = 'both'
+        else:
+            self.hemisphere = hemisphere
+            
+    def set_hemisphere(self, hemisphere):
+        """
+        Set the active hemisphere for training.
+        'left' for left hemisphere, 'right' for right hemisphere, 'both' for both hemispheres.
+        """
+        assert hemisphere in ['left', 'right', 'both'], "Invalid hemisphere option"
+        self.hemisphere = hemisphere
+        print(f'Reset rnn hemisphere to {hemisphere}')
+        
+    def forward(self, input, test_on, dist_on):
 
         # initialize state at the origin. randn is there just in case we want to play with this later.
         state = 0 * \
@@ -366,9 +398,26 @@ class vRNNLayer(pl.LightningModule):
 
         # loop over input
         for i in range(input.shape[1]):
-
+            if self.mode == 'no-swap':
+                if i >= test_on:
+                    self.set_hemisphere('both')
+                else:
+                    self.set_hemisphere('right')
+            elif self.mode == 'swap':
+                if i < dist_on:
+                    self.set_hemisphere('left')
+                elif test_on > i >= dist_on:
+                    self.set_hemisphere('right')
+                else:
+                    self.set_hemisphere('both')
+            
+            """masking for swap"""
+            mask_for_weight_ih = self.mask['weight_ih'][self.hemisphere].to(self.weight_ih.device)
+            mask_for_weight_ho = self.mask['weight_ho'][self.hemisphere].to(self.weight_ho.device)
+            mask_for_W = self.mask['W'][self.hemisphere].to(self.W.device)
+        
             # compute output
-            hy = state @ self.weight_ho.T + self.bias_oh
+            hy = state @ (mask_for_weight_ho*self.weight_ho).T + self.bias_oh
 
             # save output and hidden states
             outputs += [hy]
@@ -376,8 +425,8 @@ class vRNNLayer(pl.LightningModule):
 
             # compute the RNN update
             fx = -state + self.phi(
-                state @ (self.W * self.struc_perturb_mask)
-                + input[:, i, :] @ self.weight_ih.T
+                state @ ((mask_for_W*self.W) * self.struc_perturb_mask)
+                + input[:, i, :] @ (mask_for_weight_ih*self.weight_ih).T
                 + self.bias_hh
                 + self.inv_sqrt_alpha * noise[:, i, :]
             )
