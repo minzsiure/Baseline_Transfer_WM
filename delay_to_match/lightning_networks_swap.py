@@ -70,6 +70,18 @@ class dDMTSNet(pl.LightningModule):
             self.fixed_syn = False
             self.stsp = True
             
+        self.all_out_hidden_no_swap = []
+        self.all_out_hidden_swap = []
+     
+    def set_mode(self, mode):
+        """
+        Set the active hemisphere for training.
+        'left' for left hemisphere, 'right' for right hemisphere, 'both' for both hemispheres.
+        """
+        assert mode in ['no-swap', 'swap'], "Invalid mode"
+        self.mode = mode
+        self.rnn.set_mode(mode)
+        print(f'Reset mode to {mode}')       
 
     def forward(self, x):
         print('im called watch out')
@@ -84,7 +96,6 @@ class dDMTSNet(pl.LightningModule):
         # It is independent of forward
 
         inp, out_des, y, test_on, dis_bool, samp_off, dis_on = batch
-        # print(samp_off)
         out_readout, out_hidden, _, _ = self.rnn(inp, test_on, dis_on)
 
         # accumulate losses. if penalizing activity, then add it to the loss
@@ -107,8 +118,8 @@ class dDMTSNet(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         # print('validation')
         # defines validation step
-        inp, out_des, y, test_on, dis_bool, _ = batch
-        out_readout, _, _, _ = self.rnn(inp)
+        inp, out_des, y, test_on, dis_bool, _, dis_on = batch
+        out_readout, _, _, _ = self.rnn(inp, test_on, dis_on)
 
         accs = np.zeros(out_readout.shape[0])
         # test model performance
@@ -135,8 +146,12 @@ class dDMTSNet(pl.LightningModule):
         # Here we just reuse the validation_step for testing
         # return self.validation_step(batch, batch_idx)
         
-        inp, out_des, y, test_on, dis_bool, samp_off = batch
-        out_readout, out_hidden, _, _ = self.rnn(inp)
+        inp, out_des, y, test_on, dis_bool, samp_off, dis_on = batch
+        out_readout, out_hidden, _, _ = self.rnn(inp, test_on, dis_on)
+        if self.mode=='no-swap':
+            self.all_out_hidden_no_swap.append(out_hidden.detach().cpu())
+        elif self.mode == 'swap':
+            self.all_out_hidden_swap.append(out_hidden.detach().cpu())
 
         if self.plot:
             unique_test_on_values = torch.unique(test_on)
@@ -223,6 +238,16 @@ class dDMTSNet(pl.LightningModule):
         return [optimizer]  # ,[lr_scheduler]
 
     def on_test_epoch_end(self):
+        if self.mode == 'no-swap':
+            all_out_hidden_combined = torch.cat(self.all_out_hidden_no_swap, dim=0)
+            torch.save(all_out_hidden_combined, 'baseline_result/out_hidden_combined_no_swap.pt')
+            print('saved hidden rep of no-swap')
+            
+        elif self.mode == 'swap':
+            all_out_hidden_combined = torch.cat(self.all_out_hidden_swap, dim=0)
+            torch.save(all_out_hidden_combined, 'baseline_result/out_hidden_combined_swap.pt')
+            print('saved hidden rep of swap')
+            
         if self.plot:
             for test_on_value in self.accumulated_accuracies.keys():
                 # Get the data for this test_on value
@@ -298,7 +323,6 @@ class vRNNLayer(pl.LightningModule):
         self.disc_stab = True
         self.g = g
         self.process_noise = 0.05
-        self.mode = mode
 
         # set nonlinearity of the vRNN
         self.nonlinearity = nonlinearity
@@ -368,6 +392,8 @@ class vRNNLayer(pl.LightningModule):
         else:
             self.hemisphere = hemisphere
             
+        self.mode = mode
+            
     def set_hemisphere(self, hemisphere):
         """
         Set the active hemisphere for training.
@@ -377,7 +403,16 @@ class vRNNLayer(pl.LightningModule):
         self.hemisphere = hemisphere
         print(f'Reset rnn hemisphere to {hemisphere}')
         
-    def forward(self, input, test_on, dist_on):
+    def set_mode(self, mode):
+        """
+        Set the active hemisphere for training.
+        'left' for left hemisphere, 'right' for right hemisphere, 'both' for both hemispheres.
+        """
+        assert mode in ['no-swap', 'swap'], "Invalid mode"
+        self.mode = mode
+        print(f'Reset mode to {mode}')  
+        
+    def forward(self, input, test_on, dis_on):
 
         # initialize state at the origin. randn is there just in case we want to play with this later.
         state = 0 * \
@@ -404,9 +439,9 @@ class vRNNLayer(pl.LightningModule):
                 else:
                     self.set_hemisphere('right')
             elif self.mode == 'swap':
-                if i < dist_on:
+                if i < dis_on:
                     self.set_hemisphere('left')
-                elif test_on > i >= dist_on:
+                elif test_on > i >= dis_on:
                     self.set_hemisphere('right')
                 else:
                     self.set_hemisphere('both')

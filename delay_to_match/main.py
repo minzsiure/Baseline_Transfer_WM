@@ -54,6 +54,8 @@ if __name__ == "__main__":
     parser.add_argument("--include_delay", action="store_true", help="Whether to plot delay")
     parser.add_argument("--hemisphere", type=str, default=None,
                         help="left, right, or both hemisphere to be activated at initialization")
+    parser.add_argument("--mode", type=str, default=None,
+                        help="no-swap or swap mode to be activated at initialization")
 
     args = parser.parse_args()
 
@@ -99,6 +101,7 @@ if __name__ == "__main__":
             args.include_delay,
             args.plot,
             args.hemisphere,
+            args.mode
         )
         model = dDMTSNet.load_from_checkpoint("example.ckpt")
         print('model loaded from checkpoint')
@@ -117,6 +120,7 @@ if __name__ == "__main__":
             args.include_delay,
             args.plot,
             args.hemisphere,
+            args.mode
         )
         print('model initiated')
 
@@ -127,8 +131,6 @@ if __name__ == "__main__":
         model.rnn.gamma_val = args.gamma
 
     dDMTS = dDMTSDataModule(dt_ann=dt_ann)
-    print(len(dDMTS.val_dataloader))
-    breakpoint()
     print('data initiated')
 
     tqdm_progress_bar = TQDMProgressBar()
@@ -146,5 +148,6 @@ if __name__ == "__main__":
         print('training done.')
     
     trainer.test(model=model, datamodule=dDMTS)
+    
     
     
