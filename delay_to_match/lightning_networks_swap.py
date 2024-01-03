@@ -25,7 +25,6 @@ class dDMTSNet(pl.LightningModule):
         lr,
         include_delay,
         plot=False,
-        hemisphere=None,
         mode='no-swap'
     ):
         super().__init__()
@@ -45,13 +44,14 @@ class dDMTSNet(pl.LightningModule):
         self.mark_dis_off_dict = {233:83, 194:63, 366:150, 288:111, 166:50}
         self.rnn_type = rnn_type
         self.plot = plot
+        self.hidden_size = hidden_size
         
 
         if rnn_type == "vRNN":
             # if model is vanilla RNN
             self.rnn = vRNNLayer(input_size, hidden_size,
                                  output_size, alpha, g, nl,
-                                 hemisphere, mode)
+                                 mode)
             self.fixed_syn = True
 
         if rnn_type == "ah":
@@ -65,13 +65,16 @@ class dDMTSNet(pl.LightningModule):
             # if model is Mongillo/Masse STSP
             self.rnn = stspRNNLayer(
                 input_size, hidden_size, output_size, alpha, dt_ann, g, nl, 
-                hemisphere
             )
             self.fixed_syn = False
             self.stsp = True
             
         self.all_out_hidden_no_swap = []
         self.all_out_hidden_swap = []
+        self.all_labels_no_swap = []  # For storing labels in no-swap mode
+        self.all_labels_swap = []     # For storing labels in swap mode
+        
+        self.mode = mode
      
     def set_mode(self, mode):
         """
@@ -148,10 +151,14 @@ class dDMTSNet(pl.LightningModule):
         
         inp, out_des, y, test_on, dis_bool, samp_off, dis_on = batch
         out_readout, out_hidden, _, _ = self.rnn(inp, test_on, dis_on)
+       
         if self.mode=='no-swap':
-            self.all_out_hidden_no_swap.append(out_hidden.detach().cpu())
+            self.all_out_hidden_no_swap.append(out_hidden[:, -1, self.hidden_size//2:].detach().cpu())
+            self.all_labels_no_swap.append(y.detach().cpu()) 
         elif self.mode == 'swap':
-            self.all_out_hidden_swap.append(out_hidden.detach().cpu())
+            dis_on = int(torch.unique(dis_on)[0])
+            self.all_out_hidden_swap.append(out_hidden[:, :, self.hidden_size//2:].detach().cpu())
+            self.all_labels_swap.append(y.detach().cpu()) 
 
         if self.plot:
             unique_test_on_values = torch.unique(test_on)
@@ -240,13 +247,31 @@ class dDMTSNet(pl.LightningModule):
     def on_test_epoch_end(self):
         if self.mode == 'no-swap':
             all_out_hidden_combined = torch.cat(self.all_out_hidden_no_swap, dim=0)
-            torch.save(all_out_hidden_combined, 'baseline_result/out_hidden_combined_no_swap.pt')
-            print('saved hidden rep of no-swap')
+            all_labels_combined = torch.cat(self.all_labels_no_swap, dim=0)
+            
+            all_out_hidden_combined_np = all_out_hidden_combined.numpy()
+            all_labels_combined_np = all_labels_combined.numpy()
+
+            # Save the NumPy array to a compressed .npz file
+            np.savez_compressed('out_hidden_combined_no_swap.npz', 
+                            hidden_states=all_out_hidden_combined_np, 
+                            labels=all_labels_combined_np)
+            print('saved hidden rep and labels of no-swap')
             
         elif self.mode == 'swap':
+            # Concatenate hidden states and labels
             all_out_hidden_combined = torch.cat(self.all_out_hidden_swap, dim=0)
-            torch.save(all_out_hidden_combined, 'baseline_result/out_hidden_combined_swap.pt')
-            print('saved hidden rep of swap')
+            all_labels_combined = torch.cat(self.all_labels_swap, dim=0)
+
+            # Convert to NumPy arrays
+            all_out_hidden_combined_np = all_out_hidden_combined.numpy()
+            all_labels_combined_np = all_labels_combined.numpy()
+
+            # Save the NumPy arrays to a compressed .npz file
+            np.savez_compressed('out_hidden_combined_swap.npz', 
+                                hidden_states=all_out_hidden_combined_np, 
+                                labels=all_labels_combined_np)
+            print('saved hidden rep and labels of swap')
             
         if self.plot:
             for test_on_value in self.accumulated_accuracies.keys():
@@ -311,7 +336,7 @@ class vRNNLayer(pl.LightningModule):
     """Vanilla RNN layer in continuous time."""
 
     def __init__(self, input_size, hidden_size, output_size, alpha, g, nonlinearity,
-                 hemisphere, mode):
+                 mode):
         super(vRNNLayer, self).__init__()
 
         self.input_size = input_size
@@ -387,12 +412,13 @@ class vRNNLayer(pl.LightningModule):
                      'weight_ho':{'left':left_mask_for_weight_ho, 'right':right_mask_for_weight_ho, 'both':torch.ones_like(self.weight_ho)},
                      'W':{'left':left_mask_for_W, 'right':right_mask_for_W, 'both':torch.ones_like(self.W)}}
 
-        if hemisphere == None:
-            self.hemisphere = 'both'
-        else:
-            self.hemisphere = hemisphere
+        # if hemisphere == None:
+        #     self.hemisphere = 'both'
+        # else:
+        #     self.hemisphere = hemisphere
             
         self.mode = mode
+        print(f'Mode {mode} at initialization.')
             
     def set_hemisphere(self, hemisphere):
         """
@@ -401,7 +427,7 @@ class vRNNLayer(pl.LightningModule):
         """
         assert hemisphere in ['left', 'right', 'both'], "Invalid hemisphere option"
         self.hemisphere = hemisphere
-        print(f'Reset rnn hemisphere to {hemisphere}')
+        # print(f'Reset rnn hemisphere to {hemisphere}')
         
     def set_mode(self, mode):
         """
@@ -413,7 +439,8 @@ class vRNNLayer(pl.LightningModule):
         print(f'Reset mode to {mode}')  
         
     def forward(self, input, test_on, dis_on):
-
+        test_on = torch.unique(test_on)[0]
+        dis_on = torch.unique(dis_on)[0]
         # initialize state at the origin. randn is there just in case we want to play with this later.
         state = 0 * \
             torch.randn(input.shape[0], self.hidden_size, device=self.device)

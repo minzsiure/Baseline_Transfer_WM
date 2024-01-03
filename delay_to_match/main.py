@@ -52,10 +52,8 @@ if __name__ == "__main__":
     parser.add_argument("--testing", action="store_true", help="Skip to testing if set")
     parser.add_argument("--plot", action="store_true", help="whether to plot or not")
     parser.add_argument("--include_delay", action="store_true", help="Whether to plot delay")
-    parser.add_argument("--hemisphere", type=str, default=None,
-                        help="left, right, or both hemisphere to be activated at initialization")
-    parser.add_argument("--mode", type=str, default=None,
-                        help="no-swap or swap mode to be activated at initialization")
+    # parser.add_argument("--hemisphere", type=str, default=None,
+    #                     help="left, right, or both hemisphere to be activated at initialization")
 
     args = parser.parse_args()
 
@@ -100,8 +98,7 @@ if __name__ == "__main__":
             args.lr,
             args.include_delay,
             args.plot,
-            args.hemisphere,
-            args.mode
+            mode='no-swap'
         )
         model = dDMTSNet.load_from_checkpoint("example.ckpt")
         print('model loaded from checkpoint')
@@ -119,10 +116,9 @@ if __name__ == "__main__":
             args.lr,
             args.include_delay,
             args.plot,
-            args.hemisphere,
-            args.mode
+            mode='no-swap'
         )
-        print('model initiated')
+        print('no-swap model initiated')
 
     model.act_reg = args.act_reg
     model.param_reg = args.param_reg
@@ -130,7 +126,8 @@ if __name__ == "__main__":
     if args.rnn_type == 'ah':
         model.rnn.gamma_val = args.gamma
 
-    dDMTS = dDMTSDataModule(dt_ann=dt_ann)
+    dDMTS_first_set = dDMTSDataModule(dt_ann=dt_ann)
+    dDMTS_second_set = dDMTSDataModule(dt_ann=dt_ann)
     print('data initiated')
 
     tqdm_progress_bar = TQDMProgressBar()
@@ -138,16 +135,27 @@ if __name__ == "__main__":
         max_epochs=args.epochs,
         callbacks=[checkpoint_callback, early_stop_callback],
         accelerator="gpu",
+        devices=1,
         enable_progress_bar=True,
         enable_model_summary=True
     )
 
     if not args.testing:
-        trainer.fit(model, dDMTS)
-        trainer.save_checkpoint("both_hemisphere_stsp.ckpt")
-        print('training done.')
+        trainer.fit(model, dDMTS_first_set)
+        trainer.save_checkpoint("no_swap_vRNN.ckpt")
+        print('training done. saved no_swap_vRNN.ckpt')
     
-    trainer.test(model=model, datamodule=dDMTS)
+    trainer.test(model=model, datamodule=dDMTS_first_set)
+    
+    model.set_mode('swap')
+    print('Changed to swap mode')
+    if not args.testing:
+        trainer.fit(model, dDMTS_second_set)
+        trainer.save_checkpoint("swap_vRNN.ckpt")
+        print('training done. saved swap_vRNN.ckpt')
+    
+    trainer.test(model=model, datamodule=dDMTS_second_set)
+    
     
     
     

@@ -98,6 +98,8 @@ def generate_one_DMTS_IO(sample_mat, samp, noise_level, dt, alpha, time_limits=[
     inp += np.sqrt(2/alpha)*noise_level*torch.randn(inp.shape)
 
     # adding also int(samp_off/dt)
+    print(f'samp_on {int(samp_on/dt)}, samp_off {int(samp_off/dt)}, dis_on {int(dis_on/dt)}, dis_off {int(dis_off/dt)}, test_on {int(test_on/dt)}, test_off {int(test_off/dt)}')
+    breakpoint()
     return inp[::dt], out_des[::dt], int(test_on/dt), distracted_bool, int(samp_off/dt), int(dis_on/dt)
 
 
