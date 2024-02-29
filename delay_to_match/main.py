@@ -12,8 +12,10 @@ from pytorch_lightning import Trainer
 import os
 
 input_size = 8 + 3
+# input_size = 2+3
 #hidden_size = 100
 output_size = 8 + 3
+# output_size = 2+3
 dt_ann = 15
 alpha = dt_ann / 100
 alpha_W = dt_ann / 100
@@ -32,7 +34,7 @@ if __name__ == "__main__":
 
     # network parameters & hyperparameters
     parser.add_argument("--rnn_type", type=str,
-                        default="vRNN", help="rNN to use")
+                        default="stsp", help="rNN to use")
     parser.add_argument("--nl", type=str, default="tanh",
                         help="nonlinearity to use")
     parser.add_argument("--hs", type=int, default="100", help="hidden size")
@@ -142,8 +144,8 @@ if __name__ == "__main__":
 
     if not args.testing:
         trainer.fit(model, dDMTS_first_set)
-        trainer.save_checkpoint("no_swap_vRNN.ckpt")
-        print('training done. saved no_swap_vRNN.ckpt')
+        trainer.save_checkpoint("no_swap_stsp.ckpt")
+        print('training done. saved no_swap_stsp.ckpt')
     
     trainer.test(model=model, datamodule=dDMTS_first_set)
     
@@ -151,8 +153,8 @@ if __name__ == "__main__":
     print('Changed to swap mode')
     if not args.testing:
         trainer.fit(model, dDMTS_second_set)
-        trainer.save_checkpoint("swap_vRNN.ckpt")
-        print('training done. saved swap_vRNN.ckpt')
+        trainer.save_checkpoint("swap_stsp.ckpt")
+        print('training done. saved swap_stsp.ckpt')
     
     trainer.test(model=model, datamodule=dDMTS_second_set)
     

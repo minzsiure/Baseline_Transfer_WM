@@ -7,7 +7,8 @@ import os
 
 AVAIL_GPUS = min(1, torch.cuda.device_count())
 BATCH_SIZE = 256 if AVAIL_GPUS else 64
-NUM_WORKERS = int(os.cpu_count() / 2)
+# NUM_WORKERS = int(os.cpu_count() / 2)
+NUM_WORKERS = 2
 
 """dDMTSDataModule --> get_DMTS_training_test_val_sets --> make `DMTS_Dataset` (a dataset) through `generate_DMTS` (which calls `generate_one_DMTS_IO` for individual sample)"""
 
@@ -55,7 +56,8 @@ def generate_one_DMTS_IO(sample_mat, samp, noise_level, dt, alpha, time_limits=[
     distractor1 = np.random.choice(np.delete(np.arange(num_samples), samp))
 
     # by convention the 8th and 9th samples are possible mid-delay distractors
-    mid_delay_distractor_ind = np.random.choice([7, 8])
+    # mid_delay_distractor_ind = np.random.choice([7, 8])
+    mid_delay_distractor_ind = np.random.choice(np.delete(np.arange(num_samples), samp)[-2:])
     delay_length = 1000*np.random.choice(possible_delays)
 
     tvec = np.arange(time_limits[0], time_limits[1], 1/1000)
@@ -98,11 +100,11 @@ def generate_one_DMTS_IO(sample_mat, samp, noise_level, dt, alpha, time_limits=[
     inp += np.sqrt(2/alpha)*noise_level*torch.randn(inp.shape)
 
     # adding also int(samp_off/dt)
-    print(f'samp_on {int(samp_on/dt)}, samp_off {int(samp_off/dt)}, dis_on {int(dis_on/dt)}, dis_off {int(dis_off/dt)}, test_on {int(test_on/dt)}, test_off {int(test_off/dt)}')
-    breakpoint()
+    # print(f'samp_on {int(samp_on/dt)}, samp_off {int(samp_off/dt)}, dis_on {int(dis_on/dt)}, dis_off {int(dis_off/dt)}, test_on {int(test_on/dt)}, test_off {int(test_off/dt)}')
+    # breakpoint()
     return inp[::dt], out_des[::dt], int(test_on/dt), distracted_bool, int(samp_off/dt), int(dis_on/dt)
 
-
+# changed num_samples from 8+2 to 2
 def generate_DMTS(dt=100, tau=100, time_limits=[-1, 5.5], num_samples=8+2, variable_delay=True, mid_delay_distractor=True):
     """"
    Generates one delayed-match to sample dataset. 

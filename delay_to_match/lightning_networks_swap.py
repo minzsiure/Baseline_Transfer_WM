@@ -64,7 +64,9 @@ class dDMTSNet(pl.LightningModule):
         if rnn_type == "stsp":
             # if model is Mongillo/Masse STSP
             self.rnn = stspRNNLayer(
-                input_size, hidden_size, output_size, alpha, dt_ann, g, nl, 
+                input_size, hidden_size, 
+                output_size, alpha, dt_ann, g, nl, 
+                mode
             )
             self.fixed_syn = False
             self.stsp = True
@@ -253,7 +255,7 @@ class dDMTSNet(pl.LightningModule):
             all_labels_combined_np = all_labels_combined.numpy()
 
             # Save the NumPy array to a compressed .npz file
-            np.savez_compressed('out_hidden_combined_no_swap.npz', 
+            np.savez_compressed('out_hidden_combined_no_swap_stsp.npz', 
                             hidden_states=all_out_hidden_combined_np, 
                             labels=all_labels_combined_np)
             print('saved hidden rep and labels of no-swap')
@@ -268,7 +270,7 @@ class dDMTSNet(pl.LightningModule):
             all_labels_combined_np = all_labels_combined.numpy()
 
             # Save the NumPy arrays to a compressed .npz file
-            np.savez_compressed('out_hidden_combined_swap.npz', 
+            np.savez_compressed('out_hidden_combined_swap_stsp.npz', 
                                 hidden_states=all_out_hidden_combined_np, 
                                 labels=all_labels_combined_np)
             print('saved hidden rep and labels of swap')
@@ -700,7 +702,7 @@ class stspRNNLayer(pl.LightningModule):
 
     def __init__(
         self, input_size, hidden_size, output_size, alpha, dt, g, nonlinearity,
-        hemisphere
+        mode
     ):
         super(stspRNNLayer, self).__init__()
 
@@ -826,9 +828,32 @@ class stspRNNLayer(pl.LightningModule):
         self.process_noise = 0.05
         
         # New attribute to specify the active hemisphere
-        self.hemisphere = hemisphere  # can be 'left', 'right', or 'both'
+        # self.hemisphere = hemisphere  # can be 'left', 'right', or 'both'
+        self.mode = mode
+        print(f'Mode {mode} at initialization.')
+    
+    def set_hemisphere(self, hemisphere):
+        """
+        Set the active hemisphere for training.
+        'left' for left hemisphere, 'right' for right hemisphere, 'both' for both hemispheres.
+        """
+        assert hemisphere in ['left', 'right', 'both'], "Invalid hemisphere option"
+        self.hemisphere = hemisphere
+        # print(f'Reset rnn hemisphere to {hemisphere}')
+        
+    def set_mode(self, mode):
+        """
+        Set the active hemisphere for training.
+        'left' for left hemisphere, 'right' for right hemisphere, 'both' for both hemispheres.
+        """
+        assert mode in ['no-swap', 'swap'], "Invalid mode"
+        self.mode = mode
+        print(f'Reset mode to {mode}')  
 
-    def forward(self, input):
+    def forward(self, input, test_on, dis_on):
+        test_on = torch.unique(test_on)[0]
+        dis_on = torch.unique(dis_on)[0]
+        
         # initialize neural state and synaptic states
         state = 0 * \
             torch.randn(input.shape[0], self.hidden_size, device=self.device)
@@ -846,12 +871,7 @@ class stspRNNLayer(pl.LightningModule):
             )
         )
         
-        """masking for swap"""
-        # if self.hemisphere == 'left':
-        mask_for_weight_ih = self.mask['weight_ih'][self.hemisphere].to(self.weight_ih.device)
-        mask_for_weight_ho = self.mask['weight_ho'][self.hemisphere].to(self.weight_ho.device)
-        mask_for_W = self.mask['W'][self.hemisphere].to(self.W.device)
-
+       
         # for storing neural outputs, hidden states, and synaptic states
         outputs = []
         states = []
@@ -859,6 +879,23 @@ class stspRNNLayer(pl.LightningModule):
         states_u = []
 
         for i in range(input.shape[1]):
+            if self.mode == 'no-swap':
+                if i >= test_on:
+                    self.set_hemisphere('both')
+                else:
+                    self.set_hemisphere('right')
+            elif self.mode == 'swap':
+                if i < dis_on:
+                    self.set_hemisphere('left')
+                elif test_on > i >= dis_on:
+                    self.set_hemisphere('right')
+                else:
+                    self.set_hemisphere('both')
+                    
+            """masking for swap"""
+            mask_for_weight_ih = self.mask['weight_ih'][self.hemisphere].to(self.weight_ih.device)
+            mask_for_weight_ho = self.mask['weight_ho'][self.hemisphere].to(self.weight_ho.device)
+            mask_for_W = self.mask['W'][self.hemisphere].to(self.W.device)
 
             # compute and save neural output
             hy = state @ (mask_for_weight_ho*self.weight_ho).T + self.bias_oh
@@ -906,12 +943,3 @@ class stspRNNLayer(pl.LightningModule):
             noise,
         )
         
-    # New method to set the active hemisphere
-    def set_hemisphere(self, hemisphere):
-        """
-        Set the active hemisphere for training.
-        'left' for left hemisphere, 'right' for right hemisphere, 'both' for both hemispheres.
-        """
-        assert hemisphere in ['left', 'right', 'both'], "Invalid hemisphere option"
-        self.hemisphere = hemisphere
-        print(f'Reset rnn hemisphere to {hemisphere}')

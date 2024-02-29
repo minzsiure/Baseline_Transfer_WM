@@ -2,12 +2,13 @@ import numpy as np
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score
 import matplotlib.pyplot as plt
-
-no_swap = np.load('out_hidden_combined_no_swap.npz')
+# path = 'baseline_result/'
+path = ''
+no_swap = np.load(f'{path}out_hidden_combined_no_swap_stsp.npz')
 no_swap_hidden = no_swap['hidden_states']  
 no_swap_y = no_swap['labels']
 
-swap = np.load('out_hidden_combined_swap.npz')
+swap = np.load(f'{path}out_hidden_combined_swap_stsp.npz')
 swap_hidden = swap['hidden_states']  
 swap_y = swap['labels']
 
@@ -20,7 +21,8 @@ clf.fit(no_swap_hidden, no_swap_y)
 
 # Test classifier on swap data and calculate accuracies
 accuracies = []
-x_values = {
+
+time_points = {
     "samp_on": 66,
     "samp_off": 100,
     "dis_on": 166,
@@ -28,7 +30,14 @@ x_values = {
     "test_on": 233,
     "test_off": 266
 }
-    
+
+intervals = {
+    "samp": (66, 100),
+    "dis": (166, 183),
+    "test": (233, 266)
+}
+
+
 for i in range(swap_hidden.shape[1]):  # Iterate over time steps
     swap_hidden_at_time_i = swap_hidden[:, i, :]
     predictions = clf.predict(swap_hidden_at_time_i)
@@ -39,10 +48,14 @@ for i in range(swap_hidden.shape[1]):  # Iterate over time steps
 # Plotting
 plt.figure(figsize=(10, 6))
 plt.plot(accuracies)
-for label, x in x_values.items():
+# Adding labels for individual time points
+for label, x in time_points.items():
+    y_value = np.interp(x, np.arange(len(accuracies)), accuracies)
+    plt.text(x, y_value, label, rotation=90, verticalalignment='bottom', color='black')
     plt.axvline(x=x, linestyle='--', label=label)
+
 plt.xlabel('Time')
 plt.ylabel('Accuracy')
 plt.legend
 plt.title('Accuracy over Time')
-plt.savefig('baseline.pdf')
+plt.savefig(f'{path}baseline_stsp.pdf')
