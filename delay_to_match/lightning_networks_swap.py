@@ -255,7 +255,7 @@ class dDMTSNet(pl.LightningModule):
             all_labels_combined_np = all_labels_combined.numpy()
 
             # Save the NumPy array to a compressed .npz file
-            np.savez_compressed('out_hidden_combined_no_swap_stsp.npz', 
+            np.savez_compressed(f'swap_results/{self.rnn_type}/out_hidden_combined_no_swap_{self.rnn_type}.npz', 
                             hidden_states=all_out_hidden_combined_np, 
                             labels=all_labels_combined_np)
             print('saved hidden rep and labels of no-swap')
@@ -270,7 +270,7 @@ class dDMTSNet(pl.LightningModule):
             all_labels_combined_np = all_labels_combined.numpy()
 
             # Save the NumPy arrays to a compressed .npz file
-            np.savez_compressed('out_hidden_combined_swap_stsp.npz', 
+            np.savez_compressed(f'swap_results/{self.rnn_type}/out_hidden_combined_swap_{self.rnn_type}.npz', 
                                 hidden_states=all_out_hidden_combined_np, 
                                 labels=all_labels_combined_np)
             print('saved hidden rep and labels of swap')

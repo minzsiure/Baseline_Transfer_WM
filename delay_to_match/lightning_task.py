@@ -47,9 +47,16 @@ class DMTS_Dataset(torch.utils.data.Dataset):
         return inp, out, y, test_on, distracted_bool, samp_off, dis_on
 
 
-def generate_one_DMTS_IO(sample_mat, samp, noise_level, dt, alpha, time_limits=[-1, 5.5], possible_delays=[2.], use_distractor=1):
+def generate_one_DMTS_IO(sample_mat, samp, noise_level, dt, alpha, 
+                         time_limits=[-1, 5.5], possible_delays=[2.], 
+                         use_distractor='none'):
     """
     possible_delays=[1., 1.41, 2., 2.83, 4.]
+    
+    use_distractor:
+        - 'none': no distractor at all
+        - 'half': distractor present with half the chance
+        - 'all': distractor present all the time
     """
     num_samples = len(sample_mat)
 
@@ -78,13 +85,17 @@ def generate_one_DMTS_IO(sample_mat, samp, noise_level, dt, alpha, time_limits=[
 
     # present sample
     inp[samp_on:samp_off, :-1] = sample_mat[samp]
-
-    if np.heaviside(np.random.rand()-0.5, 0):
-        # present distractor on 50% of trials
+    
+    distracted_bool = 0
+    if use_distractor == 'half':
+        if np.heaviside(np.random.rand()-0.5, 0):
+            # present distractor on 50% of trials
+            inp[dis_on:dis_off, :-1] = sample_mat[mid_delay_distractor_ind]
+            distracted_bool = 1
+    elif use_distractor == 'all':
+        # distracted_bool = 0
         inp[dis_on:dis_off, :-1] = sample_mat[mid_delay_distractor_ind]
         distracted_bool = 1
-    else:
-        distracted_bool = 0
 
     # present test and sample
     inp[test_on:test_off, :-1] = sample_mat[samp] + sample_mat[distractor1]
@@ -105,7 +116,9 @@ def generate_one_DMTS_IO(sample_mat, samp, noise_level, dt, alpha, time_limits=[
     return inp[::dt], out_des[::dt], int(test_on/dt), distracted_bool, int(samp_off/dt), int(dis_on/dt)
 
 # changed num_samples from 8+2 to 2
-def generate_DMTS(dt=100, tau=100, time_limits=[-1, 5.5], num_samples=8+2, variable_delay=True, mid_delay_distractor=True):
+def generate_DMTS(dt=100, tau=100, time_limits=[-1, 5.5], 
+                  num_samples=4+2, variable_delay=True, 
+                  use_distractor='half'):
     """"
    Generates one delayed-match to sample dataset. 
 
@@ -152,7 +165,8 @@ def generate_DMTS(dt=100, tau=100, time_limits=[-1, 5.5], num_samples=8+2, varia
     for i in range(num_examples):
         samp = np.random.choice(np.arange(num_samples-2))
         inps[i], out_des[i], test_ons[i], distracted_bools[i], samp_offs[i], dis_ons[i] = generate_one_DMTS_IO(
-            sample_mat=sample_mat, samp=samp, noise_level=noise_level, dt=dt, alpha=dt/tau, time_limits=time_limits)
+            sample_mat=sample_mat, samp=samp, noise_level=noise_level, dt=dt, alpha=dt/tau, time_limits=time_limits,
+            use_distractor=use_distractor)
         labels[i] = samp
         list_IDs.append(i)
 
@@ -162,10 +176,10 @@ def generate_DMTS(dt=100, tau=100, time_limits=[-1, 5.5], num_samples=8+2, varia
     return inps, out_des, partition, labels, test_ons, distracted_bools, samp_offs, dis_ons
 
 
-def get_DMTS_training_test_val_sets(dt_ann):
+def get_DMTS_training_test_val_sets(dt_ann, use_distractor):
 
     inps, out_des, partition, labels, test_ons, distracted_bools, samp_offs, dis_ons = generate_DMTS(
-        dt=dt_ann)
+        dt=dt_ann, use_distractor=use_distractor)
 
     training_set = DMTS_Dataset(
         inps, out_des, partition['train'], labels, test_ons, distracted_bools, samp_offs, dis_ons)
@@ -180,14 +194,15 @@ def get_DMTS_training_test_val_sets(dt_ann):
 
 
 class dDMTSDataModule(pl.LightningDataModule):
-    def __init__(self, dt_ann: int = 15, batch_size: int = 256):
+    def __init__(self, dt_ann: int = 15, batch_size: int = 256, use_distractor: str = 'none'):
         super().__init__()
         self.dt_ann = dt_ann
         self.batch_size = batch_size
+        self.use_distractor = use_distractor
 
     def setup(self, stage=None):
         self.training_data, self.test_data, self.validation_data = get_DMTS_training_test_val_sets(
-            self.dt_ann)
+            self.dt_ann, self.use_distractor)
 
     def train_dataloader(self):
         return DataLoader(self.training_data, batch_size=BATCH_SIZE, shuffle=True, num_workers=NUM_WORKERS, drop_last=True, pin_memory=False)

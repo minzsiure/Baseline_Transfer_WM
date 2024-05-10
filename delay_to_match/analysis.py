@@ -3,12 +3,13 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score
 import matplotlib.pyplot as plt
 # path = 'baseline_result/'
-path = ''
-no_swap = np.load(f'{path}out_hidden_combined_no_swap_stsp.npz')
+path = 'swap_results/stsp/'
+rnn_type = 'stsp'
+no_swap = np.load(f'{path}out_hidden_combined_no_swap_{rnn_type}.npz')
 no_swap_hidden = no_swap['hidden_states']  
 no_swap_y = no_swap['labels']
 
-swap = np.load(f'{path}out_hidden_combined_swap_stsp.npz')
+swap = np.load(f'{path}out_hidden_combined_swap_{rnn_type}.npz')
 swap_hidden = swap['hidden_states']  
 swap_y = swap['labels']
 
@@ -25,8 +26,8 @@ accuracies = []
 time_points = {
     "samp_on": 66,
     "samp_off": 100,
-    "dis_on": 166,
-    "dis_off": 183,
+    # "dis_on": 166,
+    # "dis_off": 183,
     "test_on": 233,
     "test_off": 266
 }
@@ -58,4 +59,4 @@ plt.xlabel('Time')
 plt.ylabel('Accuracy')
 plt.legend
 plt.title('Accuracy over Time')
-plt.savefig(f'{path}baseline_stsp.pdf')
+plt.savefig(f'{path}baseline_{rnn_type}.pdf')

@@ -11,10 +11,10 @@ from pytorch_lightning import Trainer
 
 import os
 
-input_size = 8 + 3
+input_size = 4 + 3
 # input_size = 2+3
 #hidden_size = 100
-output_size = 8 + 3
+output_size = 4 + 3
 # output_size = 2+3
 dt_ann = 15
 alpha = dt_ann / 100
@@ -48,7 +48,7 @@ if __name__ == "__main__":
                         help="activity regularization strength")
     parser.add_argument("--param_reg", type=float, default="1e-4",
                         help="parameter regularization strength")
-    parser.add_argument("--epochs", type=int, default=10,
+    parser.add_argument("--epochs", type=int, default=15,
                         help="number of epochs to train (default: 10)")
     
     parser.add_argument("--testing", action="store_true", help="Skip to testing if set")
@@ -128,8 +128,8 @@ if __name__ == "__main__":
     if args.rnn_type == 'ah':
         model.rnn.gamma_val = args.gamma
 
-    dDMTS_first_set = dDMTSDataModule(dt_ann=dt_ann)
-    dDMTS_second_set = dDMTSDataModule(dt_ann=dt_ann)
+    dDMTS_first_set = dDMTSDataModule(dt_ann=dt_ann, use_distractor='none')
+    dDMTS_second_set = dDMTSDataModule(dt_ann=dt_ann, use_distractor='none')
     print('data initiated')
 
     tqdm_progress_bar = TQDMProgressBar()
@@ -144,8 +144,8 @@ if __name__ == "__main__":
 
     if not args.testing:
         trainer.fit(model, dDMTS_first_set)
-        trainer.save_checkpoint("no_swap_stsp.ckpt")
-        print('training done. saved no_swap_stsp.ckpt')
+        trainer.save_checkpoint(f"swap_results/{args.rnn_type}/no_swap_{args.rnn_type}.ckpt")
+        print(f'training done. saved no_swap_{args.rnn_type}.ckpt')
     
     trainer.test(model=model, datamodule=dDMTS_first_set)
     
@@ -153,8 +153,8 @@ if __name__ == "__main__":
     print('Changed to swap mode')
     if not args.testing:
         trainer.fit(model, dDMTS_second_set)
-        trainer.save_checkpoint("swap_stsp.ckpt")
-        print('training done. saved swap_stsp.ckpt')
+        trainer.save_checkpoint(f"swap_results/{args.rnn_type}/swap_{args.rnn_type}.ckpt")
+        print(f'training done. saved swap_{args.rnn_type}.ckpt')
     
     trainer.test(model=model, datamodule=dDMTS_second_set)
     
