@@ -1,4 +1,5 @@
 delay_to_match/baseline_result
-delay_to_match/swap_results
+delay_to_match/swap_results/stsp
+delay_to_match/swap_results/vRNN
 _lightning_sandbox
 lightning_logs

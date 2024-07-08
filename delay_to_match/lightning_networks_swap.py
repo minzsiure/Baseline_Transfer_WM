@@ -5,6 +5,7 @@ import numpy as np
 import pytorch_lightning as pl
 import matplotlib.pyplot as plt
 from sklearn.linear_model import LogisticRegression  # Import the classifier
+import h5py
 
 class dDMTSNet(pl.LightningModule):
     """distractedDelayedMatchToSampleNetwork. Class defines RNN for solving a
@@ -258,6 +259,9 @@ class dDMTSNet(pl.LightningModule):
             np.savez_compressed(f'swap_results/{self.rnn_type}/out_hidden_combined_no_swap_{self.rnn_type}.npz', 
                             hidden_states=all_out_hidden_combined_np, 
                             labels=all_labels_combined_np)
+            # with h5py.File(f'swap_results/{self.rnn_type}/out_hidden_combined_no_swap_{self.rnn_type}.h5', 'w') as hf:
+            #     hf.create_dataset('hidden_states', data=all_out_hidden_combined_np, compression='gzip')
+            #     hf.create_dataset('labels', data=all_labels_combined_np, compression='gzip')
             print('saved hidden rep and labels of no-swap')
             
         elif self.mode == 'swap':
@@ -273,6 +277,9 @@ class dDMTSNet(pl.LightningModule):
             np.savez_compressed(f'swap_results/{self.rnn_type}/out_hidden_combined_swap_{self.rnn_type}.npz', 
                                 hidden_states=all_out_hidden_combined_np, 
                                 labels=all_labels_combined_np)
+            # with h5py.File(f'swap_results/{self.rnn_type}/out_hidden_combined_swap_{self.rnn_type}.h5', 'w') as hf:
+            #     hf.create_dataset('hidden_states', data=all_out_hidden_combined_np, compression='gzip')
+            #     hf.create_dataset('labels', data=all_labels_combined_np, compression='gzip')
             print('saved hidden rep and labels of swap')
             
         if self.plot:

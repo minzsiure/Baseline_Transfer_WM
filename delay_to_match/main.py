@@ -34,7 +34,7 @@ if __name__ == "__main__":
 
     # network parameters & hyperparameters
     parser.add_argument("--rnn_type", type=str,
-                        default="stsp", help="rNN to use")
+                        default="stsp", help="RNN to use")
     parser.add_argument("--nl", type=str, default="tanh",
                         help="nonlinearity to use")
     parser.add_argument("--hs", type=int, default="100", help="hidden size")
@@ -48,7 +48,7 @@ if __name__ == "__main__":
                         help="activity regularization strength")
     parser.add_argument("--param_reg", type=float, default="1e-4",
                         help="parameter regularization strength")
-    parser.add_argument("--epochs", type=int, default=15,
+    parser.add_argument("--epochs", type=int, default=10,
                         help="number of epochs to train (default: 10)")
     
     parser.add_argument("--testing", action="store_true", help="Skip to testing if set")
@@ -81,7 +81,7 @@ if __name__ == "__main__":
         f"new-rnn={args.rnn_type}--nl={args.nl}--hs={args.hs}--act_reg={args.act_reg}--gamma={args.gamma}--param_reg={args.param_reg}--" + "{epoch:02d}--{val_acc:.2f}")
 
     early_stop_callback = EarlyStopping(
-        monitor="val_acc", stopping_threshold=0.95, mode="max", patience=50
+        monitor="val_acc", stopping_threshold=0.95, mode="max", patience=5
     )
     torch.set_float32_matmul_precision('medium') 
     
@@ -139,7 +139,8 @@ if __name__ == "__main__":
         accelerator="gpu",
         devices=1,
         enable_progress_bar=True,
-        enable_model_summary=True
+        enable_model_summary=True,
+        check_val_every_n_epoch=5
     )
 
     if not args.testing:
